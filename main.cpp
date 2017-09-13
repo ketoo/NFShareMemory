@@ -2,6 +2,7 @@
 #include <iostream>
 #include <map>
 #include <sys/shm.h>
+#include <list>
 
 using namespace std;
 
@@ -53,16 +54,16 @@ public:
     NFMemoryAlloc()
     {
         InitBaseMemory();
-        InitStringMemory();
-        rebuildMemory();
+        buildMemory();
     }
 
     bool InitBaseMemory()
     {
-        int shmid = shmget(1234, sizeof(NFMemoryBase)*1024, 0666|IPC_CREAT);
+        int shmid = shmget(shName, sizeof(NFMemoryBase) * count, 0666|IPC_CREAT);
         if(shmid == -1)
         {
             fprintf(stderr, "shmget failed\n");
+            return false;
         }
 
         shm1 = shmat(shmid, 0, 0);
@@ -73,25 +74,45 @@ public:
 
         printf("\nMemory attached at %X\n", shmid);
 
-
+        return true;
         //读取
     }
 
-    bool InitStringMemory()
+    bool allocMemory()
     {
+        if (mxFreeList.size() > 0)
+        {
+            return true;
+        }
 
+        return false;
+    }
+
+    bool allocMemory(int nCount)
+    {
+        if (mxFreeList.size() >= nCount)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     NFMemoryBase* allocMemory(NFMemoryGUID id, int16_t propertyID, int8_t type)
     {
-        int64_t address =int64_t(shm1) + index * size;
-        NFMemoryBase* p = (NFMemoryBase*)(address);
+        NFMemoryBase* p = NULL;
 
-        ++index;
+        if (mxFreeList.size() > 0)
+        {
+            p = mxFreeList.front();
+            mxFreeList.pop_front();
+        }
 
         p->id = id;
         p->proertyID = propertyID;
         p->type = type;
+
+        mxUsedList.push_back(p);
 
         return p;
     }
@@ -102,16 +123,13 @@ public:
     }
 
     //only can be used after rebuid memory
-    bool rebuildMemory()
+    bool buildMemory()
     {
         for (int i = 0; i < count; ++i)
         {
-            int64_t address =int64_t(shm1) + i * size;
+            int64_t address =int64_t(shm1) + i * sizeof(NFMemoryBase);
             NFMemoryBase* p = (NFMemoryBase*)(address);
-            //if (*p != 0)
-            {
-                //mxReferenceData.find(p->id);
-            }
+            mxFreeList.push_back(p);
         }
 
         return true;
@@ -122,21 +140,14 @@ public:
         return NULL;
     }
 
-    void clearReference()
-    {
-        //mxReferenceData.clear();
-    }
-
 private:
-//    std::map< NFGUID, < std::map< int, MemoryBase* > > > mxReferenceData;
-
+    std::list<NFMemoryBase*> mxFreeList;
+    std::list<NFMemoryBase*> mxUsedList;
 private:
-    int index = 0;
-    int size = 35;
     int count = 10000;
+    int shName = 1111;
 
     void* shm1 = NULL;//分配的共享内存的原始首地址--base
-    void* shm2 = NULL;//分配的共享内存的原始首地址--string
 };
 
 int main()
